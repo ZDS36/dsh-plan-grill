@@ -18,11 +18,11 @@
  *     ordinary question channel, using the shipped plan-review intent so the
  *     Web client renders the full Markdown with Approve / Keep planning.
  *
- * The review call is also the evidence gate: before the user is asked, the Host
- * re-reads every path the model claims it read (`read_pass`), checks the path
- * exists, checks this Session actually read it (fs/observed), and checks the
- * file did not change after that read. A plan built on guesses therefore cannot
- * reach the approval step. Approval clears the mode — one use per click.
+ * The review gate checks path metadata and this Session's fs/observed records;
+ * it does not re-read file contents. By default at least one listed path must
+ * have a read record. Shell reads do not produce those records, so recovery
+ * asks for one relevant read window instead of re-reading the whole file list.
+ * Approval clears the mode — one use per click.
  *
  * State is process-local and per Session: no other plugin's state is touched,
  * nothing is written to the profile, and every registration uses a name this
@@ -158,37 +158,22 @@ function findObservation(sessionId, path) {
 /* --------------------------------------------------------------- policy */
 
 const CORE_RULES = [
-  '【计划·盘问模式已开启】你现在的任务不是马上动手，而是把方案问到自己能直接执行的精度，再交一份有证据的计划让用户批准。',
-  '',
-  '盘问纪律（硬性）：',
-  '1. 一次只问一个问题。用 ask_user_question 提问，给 2–4 个具体选项，标出你的推荐项与理由；用户答完再问下一个。一次抛出多个问题视为失职。',
-  '2. 能自己查的事实绝不问用户：读文件、grep、看配置、看日志、看调用方、跑只读命令。只有「决策」归用户。',
-  '3. 按决策树推进：先钉父决策（目标、边界、验收标准），再展开它下面的子决策；依赖未定的分支先不问。',
-  '4. 每个问题都必须能改变计划；问了也不影响方案的，是废话，别问。',
-  '5. 问题必须具体到能验收：要么点名具体的文件/函数/现象（带行号、命令输出或日志片段），要么锁死一个可验收的边界（触发条件、错误表现、成功标准）。两样都做不到，说明你还没读够——回去读，别发问。',
-  '6. 这些问题一律禁止，问出来就是浪费用户时间：「你能详细说说吗」「还有别的吗」「你希望我怎么改」「需要我继续吗」「你的使用场景是什么」「要不要我先看看代码再说」。',
-  '7. 提问模板：「<在哪个环节/哪段代码>，你要 <A> 还是 <B>？我推荐 A，因为 <证据>；选 B 的代价是 <代价>。」选项 2–4 个，推荐项排第一并写清理由。',
-  '8. 用户说「大概/应该/可能/看情况」的地方就是歧义点：要么问清楚，要么自己查清楚。',
-  '9. 达成共识前只读不写：不改文件、不写代码、不跑有副作用的命令。',
-  '',
-  '发问前自查四件事，有一条不满足就重写这个提问：① 真的只有这一个问题？② 带推荐项和理由？③ 用户答完真能改变计划？④ 有具体证据，或锁死了可验收的边界？',
+  '【计划·盘问模式已开启】先澄清目标、边界与验收标准，再交可执行的计划，用户批准后实现。',
+  '1. 一次只问一个问题，用 ask_user_question 给 2–4 个具体选项，推荐项排第一并说明证据、理由及替代项的代价；答完再问。',
+  '2. 事实自己查，决策问用户。沿决策依赖由父到子推进，未定分支先不展开；含糊回答要查明或问清。',
+  '3. 只问会改变计划的问题，带文件/函数/输出证据，或明确触发条件与成功标准；禁止宽泛、重复或征求继续的问题。',
+  '4. 批准前不写实现、不执行有副作用的命令；仅模式 B/C 可写规定的规划文档。',
 ].join('\n')
 
 const EVIDENCE_RULES = [
-  '证据纪律（计划里的每句话都要能落地）：',
-  '- 结论必须带证据：文件路径:行号、函数名、命令输出、日志片段、配置项、测试结果。没有证据的断言不许写进计划。',
-  '- 必须猜的地方，写成「待验证假设」：每条配一个能证伪它的验证动作（读哪个文件、跑什么命令、看什么输出），并标出置信度。猜完不验证＝不合格。',
-  '- 修 bug 先定位根因，禁止贴症状补丁：读失败路径 → 读触发条件 → 读所有调用方与共享状态 → 搜同类写法是否同病。计划里要回答两件事：为什么这是根因而非症状；改完之后问题会不会挪到别处（列出受影响的调用方、配置、数据）。',
-  '- 提交前做「预确认读取」：把计划要改的每个文件/函数、它的调用方、相关配置与测试实际读一遍，把路径填进 plan_grill_review 的 read_pass。插件会核对这些路径是否存在、本会话是否真的读过、读过之后文件有没有再变；对不上就先补充读取或修计划，别硬提交。',
+  '证据与上下文：',
+  '- 关键结论给文件:行号、命令输出或测试证据；待验证假设写置信度及证伪动作。修 bug 核对失败路径、调用方与共享状态，说明根因和影响范围。',
+  '- 只查当前决策需要的函数、行段、配置与测试，限制搜索输出。复用已读且未变的内容，提交前不批量重读、不重复粘贴计划。',
+  '- read_pass 列实际读过且计划依赖的路径；Host 只查元数据，不重读正文。read 可建立 fs/observed 记录，shell/ops_bash 不会。已有 shell 证据时，只需对一个核心文件用 read(offset, limit) 读相关片段建立记录，无需重读整批文件；其余命令证据保留在 evidence，评审会标明无记录的路径。',
 ].join('\n')
 
 const CONFIRM_RULES = [
-  '收口（只有这一条路）：',
-  '- 达成共识后调用 plan_grill_review 提交计划：plan（markdown，以 # 开头，至少 3 个二级标题）、evidence（至少 2 条，claim 与 proof 一一对应）、read_pass（实际读过的文件路径）。',
-  '- 计划至少覆盖：现状与根因、证据、改动清单（精确到文件）、验证方式、风险与回滚。',
-  '- 用户点「批准」：计划模式自动关闭，从下一步开始按计划执行，不要再重复盘问。',
-  '- 用户点「继续盘问」：留在计划模式，带着用户的反馈继续问，改完再提交。',
-  '- 本模式独立于内置 /plan；两者同时开启时，以本插件协议为准，计划只用 plan_grill_review 提交。',
+  '收口：共识后仅用 plan_grill_review 提交计划，不另用内置 /plan。plan 以 # 开头，至少 3 个二级标题，含现状/根因、证据、文件改动、验证、风险与回滚；evidence 至少 2 条 claim/proof，read_pass 填实际路径。批准后模式关闭并执行；继续盘问则带反馈修订，复用证据。',
 ].join('\n')
 
 const MODE_RULES = {
@@ -305,10 +290,7 @@ function versionKey(version) {
   }
 }
 
-/**
- * Re-read every path the model claims it read: existence, this Session's own
- * read record, and whether the file changed after that read.
- */
+/** Check path metadata and reuse this Session's read records without reading contents. */
 async function auditReadPass(ctx, exec, sessionId, paths) {
   const fs = safeGet(ctx, 'fs')
   const cwd = sessionCwd(ctx, exec)
@@ -370,7 +352,7 @@ function buildReviewDetail(plan, audit, evidence, assumptions) {
       lines.push(`- ${item.assumption}（置信度 ${confidence}）→ 验证：${item.verify}`)
     }
   }
-  lines.push('', '> 核对在本轮向用户提问之前完成：路径不存在、本会话没读过、或读后又变了的内容，都不会被当作证据。')
+  lines.push('', '> 插件核对路径、读取记录与版本，不验证结论真假；无读取记录的路径仅通过存在性检查，不代表 Host 确认读过。')
   return lines.join('\n')
 }
 
@@ -415,9 +397,15 @@ function validateReviewArgs(ctx, options, args) {
       confidence: confidence === 'low' || confidence === 'high' ? confidence : 'medium',
     })
   }
-  const readPass = (Array.isArray(args && args.read_pass) ? args.read_pass : [])
-    .map((value) => textOf(value))
-    .filter((value) => value !== '')
+  const readPass = []
+  const seen = new Set()
+  for (const value of Array.isArray(args && args.read_pass) ? args.read_pass : []) {
+    const path = textOf(value)
+    const key = normalizePath(path)
+    if (path === '' || seen.has(key)) continue
+    seen.add(key)
+    readPass.push(path)
+  }
   return { plan, evidence, assumptions, readPass }
 }
 
@@ -425,24 +413,24 @@ function registerReviewTool(ctx, options) {
   ctx.tools.register({
     name: TOOL_NAME,
     description:
-      '提交计划给用户批准（仅在「计划·盘问」模式激活时可用）。调用前必须：已与用户达成共识；已实际读过计划涉及的每个文件/函数及其调用方，并把路径写进 read_pass；evidence 覆盖计划的关键结论（claim+proof 一一对应），必须猜的地方放进 assumptions 且每条都带验证动作。Host 会在向你提问之前重新核对 read_pass：路径是否存在、本会话是否真的读过、读过之后文件有没有再变；对不上会直接拒绝提交。用户批准后计划模式自动关闭并从下一步开始执行；用户选择继续盘问时，反馈会回到你这里继续问。',
+      '计划模式中提交共识计划供用户批准。复用证据，不批量重读；shell 无 fs/observed 时仅用 read(offset, limit) 补一个核心文件的相关片段。Host 核对路径、记录与版本。批准即关闭，修订则保留模式。',
     parameters: {
       type: 'object',
       additionalProperties: false,
       properties: {
         plan: {
           type: 'string',
-          description: '完整计划 markdown，以 # 开头，至少 3 个二级标题，覆盖现状与根因 / 证据 / 改动清单 / 验证 / 风险与回滚',
+          description: '完整 Markdown 计划：# 标题、至少 3 个二级标题，含根因、证据、文件改动、验证与回滚',
         },
         evidence: {
           type: 'array',
-          description: '计划所依赖的关键证据，claim 与 proof 一一对应',
+          description: '关键结论与对应证据',
           items: {
             type: 'object',
             additionalProperties: false,
             properties: {
-              claim: { type: 'string', description: '结论或断言' },
-              proof: { type: 'string', description: '证据：文件:行号、函数名、命令输出、日志片段、配置项或测试结果' },
+              claim: { type: 'string' },
+              proof: { type: 'string', description: '文件:行号、命令输出、日志或测试结果' },
               kind: { type: 'string', enum: ['file', 'command', 'log', 'doc', 'test', 'other'] },
             },
             required: ['claim', 'proof'],
@@ -450,13 +438,13 @@ function registerReviewTool(ctx, options) {
         },
         assumptions: {
           type: 'array',
-          description: '必须靠猜的地方：每条都要有能证伪它的验证动作',
+          description: '待验证假设及证伪动作',
           items: {
             type: 'object',
             additionalProperties: false,
             properties: {
               assumption: { type: 'string' },
-              verify: { type: 'string', description: '怎么证伪它：读哪个文件、跑什么命令、看什么输出' },
+              verify: { type: 'string', description: '证伪用的文件、命令与预期输出' },
               confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
             },
             required: ['assumption', 'verify'],
@@ -464,10 +452,10 @@ function registerReviewTool(ctx, options) {
         },
         read_pass: {
           type: 'array',
-          description: '提交前实际读过的文件路径（相对会话工作目录或绝对路径），Host 会逐个核对',
+          description: '实际读过的相关路径；默认至少一个需有本会话 read 记录，其余标明仅检查存在',
           items: { type: 'string' },
         },
-        root_cause: { type: 'string', description: '一句话根因（不是症状）' },
+        root_cause: { type: 'string' },
       },
       required: ['plan', 'evidence', 'read_pass'],
     },
@@ -493,17 +481,18 @@ function registerReviewTool(ctx, options) {
       }
       const input = validateReviewArgs(ctx, options, args)
       if (options.requireReadPass && input.readPass.length === 0) {
-        throw new Error(`${TOOL_NAME}: 计划模式要求先读代码再提交。read_pass 至少给 1 个你实际读过的文件路径（用 read / grep 看过），否则计划只能算猜测`)
+        throw new Error(`${TOOL_NAME}: read_pass 至少给 1 个实际读过的相关文件路径；优先用 read(offset, limit) 读取必要行段并复用记录`)
       }
       const audit = await auditReadPass(ctx, exec, sessionId, input.readPass)
       if (audit.missing.length > 0) {
         throw new Error(`${TOOL_NAME}: 这些路径不存在，不能当作读取证据：${audit.missing.join('、')}。用 read 重新核对路径后重提`)
       }
       if (audit.stale.length > 0) {
-        throw new Error(`${TOOL_NAME}: 这些文件在你读取之后被修改过，证据可能已过期：${audit.stale.join('、')}。重新读一遍再提交`)
+        throw new Error(`${TOOL_NAME}: 这些文件在你读取之后被修改过，证据可能已过期：${audit.stale.join('、')}。仅用 read(offset, limit) 更新这些文件的相关行段，未变的文件无需重读`)
       }
       if (options.enforceReadEvidence && audit.rows.length > 0 && audit.observed === 0) {
-        throw new Error(`${TOOL_NAME}: 本会话没有这些文件的读取记录（read_pass 只是抄了路径）。用 read 工具实际读取：${audit.rows.map((row) => row.path).join('、')}`)
+        const sample = audit.rows.find((row) => row.kind === 'file') || audit.rows[0]
+        throw new Error(`${TOOL_NAME}: 本会话没有这些文件的读取记录；shell/ops_bash 不产生 fs/observed，这不等于未取得命令证据。只需选择一个核心文件（如 ${sample.path}），用 read(offset, limit) 读取相关片段后重提；无需将全部 read_pass 整文件重读。其余路径会标明仅检查存在性`)
       }
       const interaction = safeGet(ctx, 'userQuestions')
       if (interaction === undefined || typeof interaction.ask !== 'function') {

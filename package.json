@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-plan-grill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Plan-first grill mode for the DSH Web UI: pick a grilling mode in the composer, get questioned to a shared understanding, then approve an evidence-checked plan before execution",
@@ -13,8 +13,7 @@
   "homepage": "https://github.com/ZDS36/dsh-plan-grill#readme",
   "bugs": "https://github.com/ZDS36/dsh-plan-grill/issues",
   "scripts": {
-    "check": "node --check index.js && node --check client.js",
-    "test": "node --test"
+    "check": "node --check index.js && node --check client.js"
   },
   "exports": {
     ".": "./index.js",
