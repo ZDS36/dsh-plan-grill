@@ -1,0 +1,8 @@
+- insert:
+    - id: plan-grill
+      name: '@local/dsh-plan-grill'
+      config:
+        enforceReadEvidence: true
+        requireReadPass: true
+        minEvidence: 2
+        ttlMinutes: 480

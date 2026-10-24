@@ -1,0 +1,51 @@
+{
+  "name": "@local/dsh-plan-grill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plan-first grill mode for the DSH Web UI: pick a grilling mode in the composer, get questioned to a shared understanding, then approve an evidence-checked plan before execution",
+  "license": "MIT",
+  "author": "ZDS36",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZDS36/dsh-plan-grill.git"
+  },
+  "homepage": "https://github.com/ZDS36/dsh-plan-grill#readme",
+  "bugs": "https://github.com/ZDS36/dsh-plan-grill/issues",
+  "scripts": {
+    "check": "node --check index.js && node --check client.js",
+    "test": "node --test"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSES/*.txt"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
