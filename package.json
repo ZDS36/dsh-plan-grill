@@ -32,7 +32,8 @@
     "SECURITY.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
-    "LICENSES/*.txt"
+    "LICENSES/*.txt",
+    "docs/images/*.png"
   ],
   "dsh": {
     "bundle": {

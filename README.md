@@ -7,6 +7,20 @@
 其来源进一步追溯至 [mattpocock/skills](https://github.com/mattpocock/skills)。
 完整致谢、改编范围与原始 MIT 版权见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
+## 界面预览
+
+以下为维护者提供的 DSH 0.2.1-rc.2（Windows）实机截图。
+
+安装并启用后，输入框左侧显示「计划」按钮：
+
+![DSH 输入框左侧的计划按钮](docs/images/dsh-plan-button.png)
+
+点击「计划」可展开三模式菜单，查看各模式的适用场景与预期产出：
+
+![计划菜单中的盘问、盘问加文档和决策地图三种模式](docs/images/dsh-plan-modes.png)
+
+本插件提供截图中的「计划」按钮及其菜单；其余控件来自 DSH 和该环境中的其他插件。
+
 ## 能做什么
 
 - 在输入框左侧选择三种模式，悬停或聚焦菜单项可查看适用场景和预期产出。
